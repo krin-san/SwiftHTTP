@@ -121,9 +121,9 @@ public class HTTPSecurity {
         }
         var policy: SecPolicyRef
         if self.validatedDN {
-            policy = SecPolicyCreateSSL(1, domain).takeRetainedValue()
+            policy = SecPolicyCreateSSL(1, domain)
         } else {
-            policy = SecPolicyCreateBasicX509().takeRetainedValue()
+            policy = SecPolicyCreateBasicX509()
         }
         SecTrustSetPolicies(trust,policy)
         if self.usePublicKeys {
@@ -145,8 +145,10 @@ public class HTTPSecurity {
         } else if let certs = self.certificates {
             let serverCerts = certificateChainForTrust(trust)
             var collect = Array<SecCertificate>()
-            for cert in certs {
-                collect.append(SecCertificateCreateWithData(nil,cert).takeRetainedValue())
+            for data in certs {
+				if let cert = SecCertificateCreateWithData(nil,data) {
+					collect.append(cert)
+				}
             }
             SecTrustSetAnchorCertificates(trust,collect)
             var result: SecTrustResultType = 0
@@ -180,7 +182,7 @@ public class HTTPSecurity {
     func extractPublicKey(data: NSData) -> SecKeyRef? {
         let possibleCert = SecCertificateCreateWithData(nil,data)
         if let cert = possibleCert {
-            return extractPublicKeyFromCert(cert.takeRetainedValue(),policy: SecPolicyCreateBasicX509().takeRetainedValue())
+            return extractPublicKeyFromCert(cert,policy: SecPolicyCreateBasicX509())
         }
         return nil
     }
@@ -193,13 +195,14 @@ public class HTTPSecurity {
     - returns: a public key
     */
     func extractPublicKeyFromCert(cert: SecCertificate, policy: SecPolicy) -> SecKeyRef? {
-        var possibleTrust: Unmanaged<SecTrust>?
-        SecTrustCreateWithCertificates(cert,policy, &possibleTrust)
+        var possibleTrust: SecTrust?
+		withUnsafeMutablePointer(&possibleTrust) {
+			SecTrustCreateWithCertificates(cert, policy, $0)
+		}
         if let trust = possibleTrust {
-            let t = trust.takeRetainedValue()
             var result: SecTrustResultType = 0
-            SecTrustEvaluate(t,&result)
-            return SecTrustCopyPublicKey(t).takeRetainedValue()
+            SecTrustEvaluate(trust,&result)
+            return SecTrustCopyPublicKey(trust)
         }
         return nil
     }
@@ -214,8 +217,9 @@ public class HTTPSecurity {
     func certificateChainForTrust(trust: SecTrustRef) -> Array<NSData> {
         var collect = Array<NSData>()
         for var i = 0; i < SecTrustGetCertificateCount(trust); i++ {
-            let cert = SecTrustGetCertificateAtIndex(trust,i)
-            collect.append(SecCertificateCopyData(cert.takeRetainedValue()).takeRetainedValue())
+			if let cert = SecTrustGetCertificateAtIndex(trust,i) {
+				collect.append(SecCertificateCopyData(cert))
+			}
         }
         return collect
     }
@@ -229,12 +233,13 @@ public class HTTPSecurity {
     */
     func publicKeyChainForTrust(trust: SecTrustRef) -> Array<SecKeyRef> {
         var collect = Array<SecKeyRef>()
-        let policy = SecPolicyCreateBasicX509().takeRetainedValue()
+        let policy = SecPolicyCreateBasicX509()
         for var i = 0; i < SecTrustGetCertificateCount(trust); i++ {
-            let cert = SecTrustGetCertificateAtIndex(trust,i)
-            if let key = extractPublicKeyFromCert(cert.takeRetainedValue(), policy: policy) {
-                collect.append(key)
-            }
+			if let cert = SecTrustGetCertificateAtIndex(trust,i) {
+				if let key = extractPublicKeyFromCert(cert, policy: policy) {
+					collect.append(key)
+				}
+			}
         }
         return collect
     }  
